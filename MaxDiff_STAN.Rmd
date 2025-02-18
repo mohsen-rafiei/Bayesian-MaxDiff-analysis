@@ -1,0 +1,61 @@
+```{r}
+library(tidyverse)
+library(brms)
+
+set.seed(123)
+items <- paste("Design", 1:10)
+utilities <- c(
+  Design1=1, Design2=0.8, Design3=0.5, Design4=0.3, Design5=0.2,
+  Design6=0, Design7=-0.2, Design8=-0.3, Design9=-0.5, Design10=-0.8
+)
+
+df <- expand_grid(
+  participant=1:20,
+  trial=1:50
+) %>%
+  mutate(
+    item_data = map2(participant, trial, ~{
+      noise <- rnorm(10, 0, 1)
+      score <- utilities + noise
+      best_item <- items[which.max(score)]
+      worst_item <- items[which.min(score)]
+      tibble(
+        item = items,
+        best = as.numeric(items == best_item),
+        worst = as.numeric(items == worst_item)
+      )
+    })
+  ) %>%
+  unnest(item_data)
+
+df_summary <- df %>%
+  group_by(item) %>%
+  summarize(
+    total_best = sum(best),
+    total_worst = sum(worst),
+    net_score = total_best - total_worst
+  ) %>%
+  mutate(item = fct_reorder(item, net_score))
+
+ggplot(df_summary, aes(x=item, y=net_score, fill=net_score>0)) +
+  geom_bar(stat="identity", show.legend=FALSE) +
+  scale_fill_manual(values=c("orange","steelblue")) +
+  coord_flip()
+
+m <- brm(
+  best ~ 0 + item + (1|participant),
+  data = df,
+  family = bernoulli(),
+  chains = 2,
+  iter = 2000,
+  seed = 123
+)
+
+ce <- conditional_effects(m, effects="item", method="posterior_epred")
+plot(ce, plot=FALSE)[[1]] +
+  ylab("Probability of 'Best'") +
+  theme_minimal()
+
+
+```
+
